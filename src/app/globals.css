@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/*
+ * VoiceGov element highlight. The DOM executor toggles `.vg-highlight` on the
+ * real element it is about to act on, so the judge can see exactly what the
+ * assistant is doing on the replica.
+ */
+.vg-highlight {
+  position: relative;
+  outline: 3px solid #6366f1 !important;
+  outline-offset: 2px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25),
+    0 0 22px 4px rgba(99, 102, 241, 0.55) !important;
+  animation: vg-pulse 1s ease-in-out infinite;
+  z-index: 5;
+}
+
+@keyframes vg-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25),
+      0 0 18px 3px rgba(99, 102, 241, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(99, 102, 241, 0.35),
+      0 0 28px 8px rgba(99, 102, 241, 0.7);
+  }
+}
