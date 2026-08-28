@@ -492,8 +492,12 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
       /* ignore */
     }
 
+    // Mobile browsers (iOS Safari, Chrome mobile) have unreliable Web Speech API
+    // support. Prefer Gemini fallback on mobile when available.
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
     const preferGemini =
-      geminiAvailableRef.current && (!hasWebSpeech || isBrave);
+      geminiAvailableRef.current && (!hasWebSpeech || isBrave || isMobile);
 
     // Prefer Web Speech (instant, free). Fall back to Gemini recorder mode when
     // Web Speech isn't available/reliable (e.g. Brave).
