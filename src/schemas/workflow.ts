@@ -11,7 +11,11 @@ export type ReplicaState =
   | "home"
   | "services"
   | "refund_form"
+  | "aadhaar_form"
   | "result";
+
+/** Fields the replica store can hold and bind inputs to. */
+export type StoreField = "pan" | "assessmentYear" | "aadhaar";
 
 export interface SemanticElement {
   /** Kind of control. */
@@ -26,6 +30,12 @@ export interface SemanticElement {
   options?: string[];
   /** Default session binding, e.g. "user.pan". */
   valueRef?: string;
+  /** Which replica-store field this control reads/writes (inputs/selects). */
+  field?: StoreField;
+  /** Which session key must be known to fill this input (e.g. "pan"). */
+  sessionKey?: string;
+  /** Human/normalisation hint for the interpreter, e.g. PAN format. */
+  format?: string;
   /** Whether acting on this element is a consequential action. */
   consequential?: boolean;
 }

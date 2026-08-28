@@ -1,10 +1,23 @@
 "use client";
 
 import { replicaStore } from "@/lib/replica/store";
+import type { ReplicaState } from "@/schemas/workflow";
 
-const SERVICES = [
+interface ServiceTile {
+  label: string;
+  desc: string;
+  id?: string;
+  route?: ReplicaState;
+}
+
+const SERVICES: ServiceTile[] = [
   { label: "Instant e-PAN", desc: "Get a new PAN instantly using Aadhaar." },
-  { label: "Link Aadhaar", desc: "Link your PAN with Aadhaar." },
+  {
+    label: "Link Aadhaar",
+    desc: "Link your PAN with Aadhaar.",
+    id: "link-aadhaar-link",
+    route: "aadhaar_form" as const,
+  },
   { label: "e-Pay Tax", desc: "Pay direct taxes online." },
   {
     label: "Know Your Refund Status",

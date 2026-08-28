@@ -1,14 +1,17 @@
 import type { Workflow } from "@/schemas/workflow";
 import { refundStatusWorkflow } from "./refund-status";
+import { linkAadhaarWorkflow } from "./link-aadhaar";
 
 /** All workflows known to VoiceGov, keyed by workflow_id. */
 export const WORKFLOWS: Record<string, Workflow> = {
   [refundStatusWorkflow.workflow_id]: refundStatusWorkflow,
+  [linkAadhaarWorkflow.workflow_id]: linkAadhaarWorkflow,
 };
 
 /** Map a detected intent to a workflow id. */
 export const INTENT_TO_WORKFLOW: Record<string, string> = {
   check_refund_status: "refund_status",
+  link_aadhaar: "link_aadhaar",
 };
 
 export function getWorkflowForIntent(intent: string): Workflow | undefined {

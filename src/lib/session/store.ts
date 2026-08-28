@@ -7,6 +7,7 @@
 export interface SessionUser {
   pan: string | null;
   assessment_year: string | null;
+  aadhaar: string | null;
 }
 
 export interface SessionState {
@@ -14,7 +15,7 @@ export interface SessionState {
 }
 
 let session: SessionState = {
-  user: { pan: null, assessment_year: null },
+  user: { pan: null, assessment_year: null, aadhaar: null },
 };
 
 const listeners = new Set<() => void>();
@@ -39,8 +40,17 @@ export const sessionStore = {
     };
     emit();
   },
+  setAadhaar(aadhaar: string | null) {
+    session = { ...session, user: { ...session.user, aadhaar } };
+    emit();
+  },
+  /** Set any session user field by key. */
+  setField(key: string, value: string | null) {
+    session = { ...session, user: { ...session.user, [key]: value } };
+    emit();
+  },
   reset() {
-    session = { user: { pan: null, assessment_year: null } };
+    session = { user: { pan: null, assessment_year: null, aadhaar: null } };
     emit();
   },
   /**

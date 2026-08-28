@@ -5,6 +5,7 @@ import { ReplicaHeader } from "./ReplicaHeader";
 import { HomePage } from "./HomePage";
 import { ServicesPage } from "./ServicesPage";
 import { RefundFormPage } from "./RefundFormPage";
+import { AadhaarFormPage } from "./AadhaarFormPage";
 import { ResultPage } from "./ResultPage";
 
 /**
@@ -21,6 +22,7 @@ export function WebsiteReplica() {
         {route === "home" && <HomePage />}
         {route === "services" && <ServicesPage />}
         {route === "refund_form" && <RefundFormPage />}
+        {route === "aadhaar_form" && <AadhaarFormPage />}
         {route === "result" && <ResultPage />}
       </main>
       <footer className="border-t border-slate-200 bg-[#0b3d67] px-6 py-3 text-center text-[11px] text-white/70">

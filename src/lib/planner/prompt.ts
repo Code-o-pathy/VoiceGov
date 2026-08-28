@@ -53,12 +53,50 @@ Return strict JSON:
   "confidence": number     // 0..1
 }
 
-Known intents: check_refund_status.
+Known intents: check_refund_status, link_aadhaar.
 Extract a PAN only if it matches 5 letters, 4 digits, 1 letter.
+Extract a 12-digit aadhaar when present.
 Extract assessment_year in the form YYYY-YY when present.`;
 
 export function buildIntentPrompt(utterance: string, hint?: Intent): string {
   return `Utterance: ${JSON.stringify(utterance)}
 ${hint ? `Heuristic guess: ${JSON.stringify(hint)}` : ""}
 Return ONLY the JSON.`;
+}
+
+// ---------------------------------------------------------------------------
+// Field interpreter
+// ---------------------------------------------------------------------------
+export const INTERPRET_SYSTEM = `You are the input interpreter for VoiceGov, a voice assistant that fills an
+Indian government form on the user's behalf. The user speaks English, Hindi, or
+Hinglish, often conversationally (e.g. "I think my PAN is different, it's
+ABCDE1234F", "add 1234F to it", "no wait, clear that").
+
+You are given the current mode, the field being collected (with its required
+format and current partial value), and all fillable fields. Decide ONE action
+and return strict JSON.
+
+Actions:
+- "provide": the user gave a value for the awaited field. Put the FULL, NORMALISED value in "value" and the field key in "field".
+- "correct": the user wants to change a specific (possibly different) field. Set "field" and the FULL normalised "value".
+- "clear": the user wants to wipe a field. Set "field".
+- "confirm": the user agrees to proceed (yes/haan/ok).
+- "cancel": the user wants to stop (no/nahi/cancel).
+- "new_request": the user asked for a different task entirely.
+- "none": nothing actionable / value still incomplete.
+
+Rules:
+- NORMALISE values to the field's format. PAN = 5 letters + 4 digits + 1 letter, uppercase, no spaces. Aadhaar = 12 digits, no spaces.
+- If the user says to ADD to a partial value, combine the current value with what they said and return the full combined "value".
+- If the combined value is still incomplete or invalid, return "none" (do not guess).
+- Extract the value out of conversational sentences; never return the whole sentence.
+- Only use field keys that appear in the provided fields.
+
+Return JSON: { "action": string, "field"?: string, "value"?: string, "message"?: string }`;
+
+export function buildInterpretPrompt(input: unknown): string {
+  return `Context:
+${JSON.stringify(input, null, 2)}
+
+Return ONLY the JSON for the single best action.`;
 }

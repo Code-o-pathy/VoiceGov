@@ -1,42 +1,59 @@
 import type { Observation } from "@/schemas/planner";
-import type { Workflow } from "@/schemas/workflow";
+import type { Workflow, StoreField } from "@/schemas/workflow";
 import { replicaStore } from "@/lib/replica/store";
+import { maskPan, maskAadhaar } from "@/lib/replica/mockApi";
 
 /**
  * Produce a COMPACT semantic observation of the replica for the planner.
+ * Workflow-driven: reads whichever fields the current page's elements bind to.
  * Never returns the DOM or full page source — only semantic state.
  */
 export function observe(workflow: Workflow): Observation {
   const s = replicaStore.get();
 
-  const visible_elements = Object.entries(workflow.elements)
-    .filter(([, el]) => el.state === s.route)
-    .map(([id]) => id);
+  const onState = Object.entries(workflow.elements).filter(
+    ([, el]) => el.state === s.route
+  );
 
   const values: Record<string, string> = {};
-  if (s.route === "refund_form") {
-    if (s.pan) values.pan_input = maskPan(s.pan);
-    if (s.assessmentYear) values.assessment_year = s.assessmentYear;
+  const field_errors: Record<string, string> = {};
+
+  for (const [id, el] of onState) {
+    if (!el.field) continue;
+    const raw = fieldValue(s.pan, s.assessmentYear, s.aadhaar, el.field);
+    if (raw) values[id] = maskField(el.field, raw);
+    if (s.fieldErrors[el.field]) field_errors[id] = s.fieldErrors[el.field];
   }
 
   return {
     state: s.route,
-    visible_elements,
+    visible_elements: onState.map(([id]) => id),
     values,
     loading: s.loading,
-    field_errors: renameKeys(s.fieldErrors),
+    field_errors,
     has_result: Boolean(s.result),
     result_status: s.result?.status,
   };
 }
 
-/** Mask everything but the last character so PANs never leak verbatim. */
-function maskPan(pan: string): string {
-  if (pan.length <= 2) return "\u2022".repeat(pan.length);
-  return "\u2022".repeat(pan.length - 1) + pan.slice(-1);
+function fieldValue(
+  pan: string,
+  assessmentYear: string,
+  aadhaar: string,
+  field: StoreField
+): string {
+  switch (field) {
+    case "pan":
+      return pan;
+    case "assessmentYear":
+      return assessmentYear;
+    case "aadhaar":
+      return aadhaar;
+  }
 }
 
-function renameKeys(errors: Record<string, string>): Record<string, string> {
-  // Keep semantic ids as-is; they already match the registry.
-  return { ...errors };
+function maskField(field: StoreField, value: string): string {
+  if (field === "pan") return maskPan(value);
+  if (field === "aadhaar") return maskAadhaar(value);
+  return value;
 }

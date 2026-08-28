@@ -1,22 +1,30 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { ReplicaState } from "@/schemas/workflow";
-import { checkRefundStatus, type RefundResult } from "./mockApi";
+import type { ReplicaState, StoreField } from "@/schemas/workflow";
+import {
+  checkRefundStatus,
+  checkAadhaarLink,
+  FieldError,
+  type ServiceResult,
+} from "./mockApi";
 
 export interface ReplicaStore {
   route: ReplicaState;
   pan: string;
   assessmentYear: string;
+  aadhaar: string;
   loading: boolean;
+  /** Inline validation errors keyed by store field ("pan" | "aadhaar" | ...). */
   fieldErrors: Record<string, string>;
-  result: RefundResult | null;
+  result: ServiceResult | null;
 }
 
 const INITIAL: ReplicaStore = {
   route: "home",
   pan: "",
   assessmentYear: "2025-26",
+  aadhaar: "",
   loading: false,
   fieldErrors: {},
   result: null,
@@ -24,10 +32,6 @@ const INITIAL: ReplicaStore = {
 
 let state: ReplicaStore = { ...INITIAL };
 const listeners = new Set<() => void>();
-const emit = () => {
-  state = { ...state };
-  listeners.forEach((l) => l());
-};
 
 function set(patch: Partial<ReplicaStore>) {
   state = { ...state, ...patch };
@@ -43,35 +47,57 @@ export const replicaStore = {
   navigate(route: ReplicaState) {
     set({ route });
   },
-  setPan(pan: string) {
+  setField(field: StoreField, value: string) {
     const fieldErrors = { ...state.fieldErrors };
-    delete fieldErrors.pan_input;
-    set({ pan, fieldErrors });
+    delete fieldErrors[field];
+    set({ [field]: value, fieldErrors } as Partial<ReplicaStore>);
+  },
+  setPan(pan: string) {
+    this.setField("pan", pan);
   },
   setAssessmentYear(assessmentYear: string) {
-    set({ assessmentYear });
+    this.setField("assessmentYear", assessmentYear);
+  },
+  setAadhaar(aadhaar: string) {
+    this.setField("aadhaar", aadhaar);
   },
   async submit() {
     set({ loading: true, fieldErrors: {} });
     try {
-      const result = await checkRefundStatus(state.pan, state.assessmentYear);
+      let result: ServiceResult;
+      if (state.route === "refund_form") {
+        result = await checkRefundStatus(state.pan, state.assessmentYear);
+      } else if (state.route === "aadhaar_form") {
+        result = await checkAadhaarLink(state.pan, state.aadhaar);
+      } else {
+        set({ loading: false });
+        return;
+      }
       set({ loading: false, result, route: "result" });
     } catch (e) {
+      const field = e instanceof FieldError ? e.field : "pan";
       const message =
         e instanceof Error ? e.message : "Something went wrong. Try again.";
-      set({
-        loading: false,
-        fieldErrors: { pan_input: message },
-      });
+      set({ loading: false, fieldErrors: { [field]: message } });
     }
   },
   reset() {
     state = { ...INITIAL };
-    emit();
+    listeners.forEach((l) => l());
+  },
+  /** Reset the journey (route/result/inputs) without touching session. */
+  softReset() {
+    set({
+      route: "home",
+      pan: "",
+      aadhaar: "",
+      result: null,
+      fieldErrors: {},
+      loading: false,
+    });
   },
 };
 
-/** React binding. */
 export function useReplica(): ReplicaStore {
   return useSyncExternalStore(
     replicaStore.subscribe,

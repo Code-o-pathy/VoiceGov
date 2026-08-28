@@ -35,6 +35,16 @@ body {
   z-index: 5;
 }
 
+@keyframes vg-bar {
+  0%,
+  100% {
+    transform: scaleY(0.5);
+  }
+  50% {
+    transform: scaleY(1.4);
+  }
+}
+
 @keyframes vg-pulse {
   0%,
   100% {

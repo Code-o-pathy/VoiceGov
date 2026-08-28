@@ -40,7 +40,13 @@ export interface PlannerInput {
     required_inputs: string[];
     elements: Record<
       string,
-      { type: string; label: string; state: string; options?: string[] }
+      {
+        type: string;
+        label: string;
+        state: string;
+        options?: string[];
+        sessionKey?: string;
+      }
     >;
   };
   /** Which required inputs are already known (booleans only — no raw values). */
