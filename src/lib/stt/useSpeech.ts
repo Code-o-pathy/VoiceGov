@@ -341,7 +341,14 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
             "Voice fallback isn’t enabled on the server (no GEMINI_API_KEY). Add it in Vercel and redeploy, or use Chrome."
           );
         } else {
-          setError(`Transcription failed (${res.status}). Please try again.`);
+          let detail = "";
+          try {
+            const body = (await res.json()) as { error?: string };
+            if (body?.error) detail = ` ${body.error}`;
+          } catch {
+            /* no JSON body */
+          }
+          setError(`Transcription failed (${res.status}).${detail}`);
         }
         return;
       }
