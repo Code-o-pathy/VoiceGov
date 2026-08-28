@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { geminiTranscribe, isGeminiEnabled } from "@/lib/planner/gemini";
 
+// The Gemini SDK needs the Node.js runtime (not edge) and must read env vars at
+// request time.
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 interface TranscribeBody {
   audio?: string; // base64 (no data: prefix)
   mimeType?: string;

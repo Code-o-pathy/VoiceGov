@@ -336,11 +336,23 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
           lang: langRef.current,
         }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        // Make server-side failures visible (e.g. missing key -> 503) so Brave
+        // users aren't left with a silent, non-working mic.
+        if (res.status === 503) {
+          setError(
+            "Voice fallback isn’t enabled on the server (no GEMINI_API_KEY). Add it in Vercel and redeploy, or use Chrome."
+          );
+        } else {
+          setError(`Transcription failed (${res.status}). Please try again.`);
+        }
+        return;
+      }
       const data = (await res.json()) as { text?: string };
       const text = (data.text || "").trim();
       // Drop transcripts captured while muted (assistant was speaking).
       if (text && !mutedRef.current) {
+        setError(null);
         setInterim("");
         onFinalRef.current(text);
       }
