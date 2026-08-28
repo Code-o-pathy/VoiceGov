@@ -21,7 +21,7 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 // A cheaper/faster model used for high-frequency calls (STT + field interpret)
 // to conserve the primary model's rate-limit quota. Falls back to MODEL.
 const LITE_MODEL =
-  process.env.GEMINI_LITE_MODEL || process.env.GEMINI_MODEL || "gemini-3.6-flash-lite";
+  process.env.GEMINI_LITE_MODEL || process.env.GEMINI_MODEL || MODEL;
 
 function isRateLimitError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
