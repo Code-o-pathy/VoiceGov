@@ -154,8 +154,8 @@ const REFUNDS: Record<string, Omit<ServiceResult, "rows"> & { extra: ResultRow[]
 export const SERVICES: ServiceDef[] = [
   {
     id: "refund_status",
-    title: "Check Refund Status",
-    description: "Check the status of your tax refund (demo).",
+    title: "Know Your Refund Status",
+    description: "Check the status of your income tax refund.",
     icon: "💸",
     keywords: [
       "refund",
@@ -190,15 +190,15 @@ export const SERVICES: ServiceDef[] = [
         status: "error",
         headline: "No Refund Records Found",
         detail:
-          "No refund record was found for this PAN and Assessment Year in our demo database.",
+          "No refund record was found for this PAN and Assessment Year. Please verify the details and try again.",
         rows: base,
       };
     },
   },
   {
     id: "link_aadhaar",
-    title: "Link ID Numbers",
-    description: "Link your PAN with Aadhaar (demo).",
+    title: "Link Aadhaar",
+    description: "Link your PAN with Aadhaar.",
     icon: "🔗",
     keywords: ["aadhaar", "aadhar", "adhaar", "adhar", "आधार", "link pan"],
     fields: [panField(), aadhaarField()],
@@ -224,7 +224,7 @@ export const SERVICES: ServiceDef[] = [
           status: "error",
           headline: "Linking Failed — Details Do Not Match",
           detail:
-            "The name/date of birth on your PAN and Aadhaar do not match in this demo scenario.",
+            "The name/date of birth on your PAN and Aadhaar do not match. Please correct the mismatch and try again.",
           rows,
         };
       return {
@@ -242,8 +242,8 @@ export const SERVICES: ServiceDef[] = [
   },
   {
     id: "e_pay_tax",
-    title: "Pay Tax Online",
-    description: "Pay taxes online and get a receipt (demo).",
+    title: "e-Pay Tax",
+    description: "Pay direct taxes online and get a challan.",
     icon: "🧾",
     keywords: [
       "pay tax",
@@ -267,7 +267,7 @@ export const SERVICES: ServiceDef[] = [
         status: "success",
         headline: "Tax Payment Successful",
         detail:
-          "Your tax payment has been received and a receipt (CIN) has been generated for this demo.",
+          "Your tax payment has been received and a challan (CIN) has been generated.",
         rows: [
           { label: "PAN", value: maskPan(pan) },
           { label: "Assessment Year", value: v.assessmentYear || "2024-25" },
@@ -280,8 +280,8 @@ export const SERVICES: ServiceDef[] = [
   },
   {
     id: "verify_pan",
-    title: "Verify Tax ID",
-    description: "Verify your PAN details and status (demo).",
+    title: "Verify Your PAN",
+    description: "Verify your PAN details and status.",
     icon: "🪪",
     keywords: [
       "verify pan",
@@ -313,7 +313,7 @@ export const SERVICES: ServiceDef[] = [
         status: "success",
         headline: "PAN is Valid and Active",
         detail:
-          "The PAN provided exists in our demo database and is currently active.",
+          "The PAN provided exists in the Income Tax database and is currently active.",
         rows: [
           { label: "PAN", value: maskPan(pan) },
           { label: "Name", value: v.fullName || "—" },
@@ -326,7 +326,7 @@ export const SERVICES: ServiceDef[] = [
   {
     id: "instant_epan",
     title: "Instant e-PAN",
-    description: "Get a new PAN using Aadhaar (demo).",
+    description: "Get a new PAN instantly using Aadhaar.",
     icon: "⚡",
     keywords: [
       "instant e-pan",
@@ -349,7 +349,7 @@ export const SERVICES: ServiceDef[] = [
         status: "success",
         headline: "e-PAN Generated Successfully",
         detail:
-          "Your instant e-PAN has been generated using your Aadhaar in this demo.",
+          "Your instant e-PAN has been generated using your Aadhaar and will be sent to your registered mobile.",
         rows: [
           { label: "Aadhaar", value: maskAadhaar(aadhaar) },
           { label: "Mobile", value: `••••••${digits(v.mobile).slice(-4)}` },
@@ -361,8 +361,8 @@ export const SERVICES: ServiceDef[] = [
   },
   {
     id: "know_tan",
-    title: "Check TAN Details",
-    description: "Search the TAN of a deductor (demo).",
+    title: "Know TAN Details",
+    description: "Search the TAN of a tax deductor.",
     icon: "🏢",
     keywords: ["tan", "know tan", "tan details", "deductor", "tan number"],
     fields: [
@@ -387,7 +387,7 @@ export const SERVICES: ServiceDef[] = [
       return {
         status: "success",
         headline: "TAN Details Found",
-        detail: "The following deductor is registered against this TAN in our demo database.",
+        detail: "The following deductor is registered against this TAN.",
         rows: [
           { label: "TAN", value: tan },
           { label: "Deductor Name", value: "ACME INDUSTRIES PVT LTD" },
@@ -399,8 +399,8 @@ export const SERVICES: ServiceDef[] = [
   },
   {
     id: "authenticate_notice",
-    title: "Authenticate Document",
-    description: "Verify a notice or order (demo).",
+    title: "Authenticate Notice",
+    description: "Verify a notice or order issued by ITD.",
     icon: "📄",
     keywords: [
       "authenticate notice",
@@ -428,9 +428,9 @@ export const SERVICES: ServiceDef[] = [
       const pan = normalizePan(v.pan);
       return {
         status: "success",
-        headline: "Document Authenticated",
+        headline: "Notice Authenticated",
         detail:
-          "This document was issued by the relevant authority in this demo scenario.",
+          "This document was issued by the Income Tax Department and is genuine.",
         rows: [
           { label: "PAN", value: maskPan(pan) },
           { label: "Document Number", value: v.documentNumber },
@@ -444,7 +444,7 @@ export const SERVICES: ServiceDef[] = [
   {
     id: "tax_calculator",
     title: "Tax Calculator",
-    description: "Estimate your tax liability (demo).",
+    description: "Estimate your income tax liability.",
     icon: "🧮",
     keywords: [
       "tax calculator",
@@ -467,7 +467,7 @@ export const SERVICES: ServiceDef[] = [
         status: "success",
         headline: "Estimated Tax Liability",
         detail:
-          "This is an indicative estimate for demonstration purposes.",
+          "This is an indicative estimate under the new regime for the selected year.",
         rows: [
           { label: "Assessment Year", value: v.assessmentYear || "2024-25" },
           { label: "Total Income", value: rupees(income) },

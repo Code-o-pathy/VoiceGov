@@ -20,7 +20,7 @@ export function FormPage({ service }: { service: ServiceDef }) {
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
-          <h1 className="text-lg font-bold text-indigo-900">{service.title}</h1>
+          <h1 className="text-lg font-bold text-[#0b3d67]">{service.title}</h1>
           <p className="mt-1 text-xs text-slate-600">
             {service.description} Fields marked{" "}
             <span className="text-red-500">*</span> are mandatory.
@@ -51,7 +51,7 @@ export function FormPage({ service }: { service: ServiceDef }) {
                     id={id}
                     value={val}
                     onChange={(e) => replicaStore.setField(f.key, e.target.value)}
-                    className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600/20"
+                    className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-[#0b5cab] focus:ring-2 focus:ring-[#0b5cab]/20"
                   >
                     {(f.options ?? []).map((o) => (
                       <option key={o} value={o}>
@@ -79,7 +79,7 @@ export function FormPage({ service }: { service: ServiceDef }) {
                     } ${
                       err
                         ? "border-red-400 focus:ring-red-200"
-                        : "border-slate-300 focus:border-indigo-600 focus:ring-indigo-600/20"
+                        : "border-slate-300 focus:border-[#0b5cab] focus:ring-[#0b5cab]/20"
                     }`}
                   />
                 )}
@@ -91,7 +91,8 @@ export function FormPage({ service }: { service: ServiceDef }) {
           })}
 
           <div className="rounded bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-            Demo Note: This is a prototype. No real requests are made to any government system. All data is synthetic.
+            Note: This is a hackathon prototype. OTP / CAPTCHA verification is
+            simulated and no real request is made to any government system.
           </div>
 
           <div className="flex items-center gap-3 pt-1">
@@ -99,7 +100,7 @@ export function FormPage({ service }: { service: ServiceDef }) {
               id={`svc-${service.id}-submit`}
               type="submit"
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-indigo-700 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded bg-[#0b5cab] px-6 py-2.5 text-sm font-semibold text-white shadow hover:bg-[#0a4f92] disabled:opacity-60"
             >
               {loading && (
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />

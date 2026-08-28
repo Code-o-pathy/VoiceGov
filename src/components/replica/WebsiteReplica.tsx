@@ -25,8 +25,9 @@ export function WebsiteReplica() {
         {service && <FormPage service={service} />}
         {route === "result" && <ResultPage />}
       </main>
-      <footer className="border-t border-slate-200 bg-indigo-900 px-6 py-3 text-center text-[11px] text-white/70">
-        © 2026 VoiceGov · Educational Prototype · No real data is transmitted · Not affiliated with any government entity
+      <footer className="border-t border-slate-200 bg-[#0b3d67] px-6 py-3 text-center text-[11px] text-white/70">
+        © 2026 VoiceGov · Hackathon Prototype · High-fidelity replica for
+        demonstration only · No real data is transmitted · Not an official portal
       </footer>
     </div>
   );
