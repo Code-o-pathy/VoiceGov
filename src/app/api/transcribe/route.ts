@@ -41,9 +41,15 @@ export async function POST(req: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "transcription failed";
     console.error("[transcribe] Gemini error:", message);
+    // Surface rate-limit/quota errors as 429 so the client can back off + retry.
+    const isRateLimit =
+      /\b429\b/.test(message) ||
+      /RESOURCE_EXHAUSTED/i.test(message) ||
+      /quota/i.test(message) ||
+      /rate limit/i.test(message);
     return NextResponse.json(
       { error: `transcription failed: ${message}` },
-      { status: 500 }
+      { status: isRateLimit ? 429 : 500 }
     );
   }
 }

@@ -313,7 +313,8 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
   stopMeteringRef.current = stopMetering;
 
   // --- Gemini fallback: WAV capture ---------------------------------------
-  const sendForTranscription = useCallback(async (blob: Blob) => {
+  const sendForTranscription = useCallback(async (blob: Blob, attempt = 0) => {
+    const MAX_RETRIES = 3;
     try {
       const b64: string = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -340,6 +341,25 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
           setError(
             "Voice fallback isn’t enabled on the server (no GEMINI_API_KEY). Add it in Vercel and redeploy, or use Chrome."
           );
+        } else if (res.status === 429) {
+          // Rate limit / quota: back off and retry a few times automatically.
+          if (attempt < MAX_RETRIES) {
+            const waitMs = 1500 * Math.pow(2, attempt); // 1.5s, 3s, 6s
+            setError(
+              `API limit reached — retrying in ${Math.round(
+                waitMs / 1000
+              )}s… (tip: Chrome doesn’t use the API and won’t hit this limit)`
+            );
+            setTimeout(() => {
+              if (enabledRef.current && modeRef.current === "gemini") {
+                void sendForTranscription(blob, attempt + 1);
+              }
+            }, waitMs);
+          } else {
+            setError(
+              "API rate limit reached. Please wait a minute and try again, or use Chrome (it doesn’t need the API)."
+            );
+          }
         } else {
           let detail = "";
           try {
