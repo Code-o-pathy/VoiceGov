@@ -1,18 +1,15 @@
 import type { Workflow } from "@/schemas/workflow";
-import { refundStatusWorkflow } from "./refund-status";
-import { linkAadhaarWorkflow } from "./link-aadhaar";
+import { SERVICES, buildWorkflowFromService } from "@/lib/services/catalog";
 
-/** All workflows known to VoiceGov, keyed by workflow_id. */
-export const WORKFLOWS: Record<string, Workflow> = {
-  [refundStatusWorkflow.workflow_id]: refundStatusWorkflow,
-  [linkAadhaarWorkflow.workflow_id]: linkAadhaarWorkflow,
-};
+/** All workflows known to VoiceGov, generated from the service catalog. */
+export const WORKFLOWS: Record<string, Workflow> = Object.fromEntries(
+  SERVICES.map((s) => [s.id, buildWorkflowFromService(s)])
+);
 
-/** Map a detected intent to a workflow id. */
-export const INTENT_TO_WORKFLOW: Record<string, string> = {
-  check_refund_status: "refund_status",
-  link_aadhaar: "link_aadhaar",
-};
+/** Map a detected intent to a workflow id. Intent ids ARE service ids. */
+export const INTENT_TO_WORKFLOW: Record<string, string> = Object.fromEntries(
+  SERVICES.map((s) => [s.id, s.id])
+);
 
 export function getWorkflowForIntent(intent: string): Workflow | undefined {
   const id = INTENT_TO_WORKFLOW[intent];

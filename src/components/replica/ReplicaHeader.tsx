@@ -14,13 +14,15 @@ export function ReplicaHeader() {
 
   return (
     <header className="w-full">
-      {/* Government of India strip */}
-      <div className="bg-[#0b3d67] text-white text-[11px]">
+      {/* Demo badge strip */}
+      <div className="bg-indigo-900 text-white text-[11px]">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-1.5">
           <div className="flex items-center gap-2">
-            <FlagBadge />
+            <span className="rounded bg-yellow-400 px-2 py-0.5 text-[10px] font-bold uppercase text-indigo-900">
+              Demo
+            </span>
             <span className="tracking-wide">
-              Government of India · Ministry of Finance
+              VoiceGov Prototype · Educational Demo Only
             </span>
           </div>
           <div className="hidden gap-4 sm:flex">
@@ -40,22 +42,22 @@ export function ReplicaHeader() {
           >
             <Emblem />
             <div>
-              <div className="text-[17px] font-bold leading-tight text-[#0b3d67]">
-                Income Tax Department
+              <div className="text-[17px] font-bold leading-tight text-indigo-900">
+                Public Services Portal
               </div>
-              <div className="text-[11px] font-medium text-[#f26522]">
-                Government of India · e-Filing
+              <div className="text-[11px] font-medium text-purple-600">
+                Demo Replica · Voice-First Interface
               </div>
             </div>
           </button>
           <div className="flex items-center gap-2">
             <span className="hidden text-xs text-slate-500 sm:block">
-              Anywhere · Anytime
+              Voice Powered
             </span>
-            <button className="rounded border border-[#0b5cab] px-3 py-1.5 text-xs font-semibold text-[#0b5cab] hover:bg-[#0b5cab]/5">
+            <button className="rounded border border-indigo-600 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50">
               Register
             </button>
-            <button className="rounded bg-[#0b5cab] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0a4f92]">
+            <button className="rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
               Login
             </button>
           </div>
@@ -63,7 +65,7 @@ export function ReplicaHeader() {
       </div>
 
       {/* Primary navigation */}
-      <nav className="bg-[#0b5cab] text-white">
+      <nav className="bg-indigo-600 text-white">
         <div className="mx-auto flex max-w-6xl items-center gap-1 px-2">
           {NAV.map((item) => {
             const active =
@@ -93,20 +95,10 @@ export function ReplicaHeader() {
   );
 }
 
-function FlagBadge() {
-  return (
-    <span className="inline-flex h-3 w-5 overflow-hidden rounded-[2px] border border-white/40">
-      <span className="h-full w-1/3 bg-[#ff9933]" />
-      <span className="h-full w-1/3 bg-white" />
-      <span className="h-full w-1/3 bg-[#138808]" />
-    </span>
-  );
-}
-
 function Emblem() {
   return (
-    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-b from-[#0b5cab] to-[#0b3d67] text-white shadow">
-      <span className="text-lg font-black leading-none">IT</span>
+    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow">
+      <span className="text-lg font-black leading-none">VG</span>
     </div>
   );
 }

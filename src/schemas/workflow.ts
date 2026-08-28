@@ -6,16 +6,15 @@
  */
 export type ElementType = "link" | "input" | "select" | "button" | "result";
 
-/** Page states of the replica relevant to a workflow. */
-export type ReplicaState =
-  | "home"
-  | "services"
-  | "refund_form"
-  | "aadhaar_form"
-  | "result";
+/**
+ * Page states of the replica relevant to a workflow. "home", "services" and
+ * "result" are shared; each service adds its own form state (e.g.
+ * "refund_status_form"), so this is a free-form string.
+ */
+export type ReplicaState = string;
 
-/** Fields the replica store can hold and bind inputs to. */
-export type StoreField = "pan" | "assessmentYear" | "aadhaar";
+/** Fields the replica store can hold and bind inputs to (service field keys). */
+export type StoreField = string;
 
 export interface SemanticElement {
   /** Kind of control. */

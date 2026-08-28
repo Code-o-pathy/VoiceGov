@@ -1,5 +1,5 @@
 import type { Observation } from "@/schemas/planner";
-import type { Workflow, StoreField } from "@/schemas/workflow";
+import type { Workflow } from "@/schemas/workflow";
 import { replicaStore } from "@/lib/replica/store";
 import { maskPan, maskAadhaar } from "@/lib/replica/mockApi";
 
@@ -20,7 +20,7 @@ export function observe(workflow: Workflow): Observation {
 
   for (const [id, el] of onState) {
     if (!el.field) continue;
-    const raw = fieldValue(s.pan, s.assessmentYear, s.aadhaar, el.field);
+    const raw = s.values[el.field] ?? "";
     if (raw) values[id] = maskField(el.field, raw);
     if (s.fieldErrors[el.field]) field_errors[id] = s.fieldErrors[el.field];
   }
@@ -36,23 +36,7 @@ export function observe(workflow: Workflow): Observation {
   };
 }
 
-function fieldValue(
-  pan: string,
-  assessmentYear: string,
-  aadhaar: string,
-  field: StoreField
-): string {
-  switch (field) {
-    case "pan":
-      return pan;
-    case "assessmentYear":
-      return assessmentYear;
-    case "aadhaar":
-      return aadhaar;
-  }
-}
-
-function maskField(field: StoreField, value: string): string {
+function maskField(field: string, value: string): string {
   if (field === "pan") return maskPan(value);
   if (field === "aadhaar") return maskAadhaar(value);
   return value;

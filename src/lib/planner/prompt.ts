@@ -1,5 +1,6 @@
 import type { PlannerInput, Intent } from "@/schemas/planner";
 import { ACTION_TYPES } from "@/schemas/actions";
+import { SERVICES } from "@/lib/services/catalog";
 
 /** System instruction constraining the LLM to the application-owned action space. */
 export const PLANNER_SYSTEM = `You are the planning brain of VoiceGov, a voice interface that operates a
@@ -43,23 +44,34 @@ Return ONLY the JSON for the next step.`;
 }
 
 export const INTENT_SYSTEM = `You extract intent from a citizen's utterance about an Indian government
-service. The user may speak English, Hindi, or Hinglish.
+service. The user may speak English, Hindi, or Hinglish. Match the underlying
+GOAL, not exact words — paraphrases, synonyms and code-mixed speech should still
+map to the right intent.
 
 Return strict JSON:
 {
-  "intent": string,        // e.g. "check_refund_status" or "unknown"
+  "intent": string,        // one of the known intent ids below, or "unknown"
   "entities": object,      // e.g. { "pan": "ABCDE1234F", "assessment_year": "2025-26" }
   "language": "english" | "hindi" | "hinglish",
   "confidence": number     // 0..1
 }
 
-Known intents: check_refund_status, link_aadhaar.
 Extract a PAN only if it matches 5 letters, 4 digits, 1 letter.
 Extract a 12-digit aadhaar when present.
-Extract assessment_year in the form YYYY-YY when present.`;
+Extract assessment_year in the form YYYY-YY when present.
+Choose "unknown" only if none of the intents fit.`;
+
+function intentCatalogText(): string {
+  return SERVICES.map(
+    (s) => `- ${s.id}: ${s.title} — ${s.description}`
+  ).join("\n");
+}
 
 export function buildIntentPrompt(utterance: string, hint?: Intent): string {
-  return `Utterance: ${JSON.stringify(utterance)}
+  return `Known intents:
+${intentCatalogText()}
+
+Utterance: ${JSON.stringify(utterance)}
 ${hint ? `Heuristic guess: ${JSON.stringify(hint)}` : ""}
 Return ONLY the JSON.`;
 }

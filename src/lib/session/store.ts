@@ -8,6 +8,8 @@ export interface SessionUser {
   pan: string | null;
   assessment_year: string | null;
   aadhaar: string | null;
+  /** Any additional service field (mobile, tan, amount, …). */
+  [key: string]: string | null;
 }
 
 export interface SessionState {

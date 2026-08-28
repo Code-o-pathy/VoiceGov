@@ -5,6 +5,7 @@ import {
   normalizePan,
   normalizeAadhaar,
 } from "@/lib/replica/mockApi";
+import { SERVICES } from "@/lib/services/catalog";
 
 const HINGLISH_MARKERS = [
   "mujhe",
@@ -22,23 +23,21 @@ const HINGLISH_MARKERS = [
   "dikhao",
   "karo",
   "karado",
+  "kar",
+  "do",
+  "dena",
+  "number",
+  "jodo",
+  "jodna",
+  "link",
 ];
-
-const REFUND_MARKERS = [
-  "refund",
-  "return",
-  "paisa",
-  "paise",
-  "status",
-  "wapas",
-  "vapas",
-];
-
-const AADHAAR_MARKERS = ["aadhaar", "aadhar", "adhaar", "adhar", "आधार"];
 
 /**
  * Deterministic intent extraction used as an offline fallback and as the
  * baseline the LLM route mirrors. Understands English, Hindi, and Hinglish.
+ *
+ * Matches by keyword/synonym across the whole service catalog and picks the
+ * best-scoring service, so it targets the INTENT, not one exact phrasing.
  */
 export function parseIntentLocal(utteranceRaw: string): Intent {
   const utterance = utteranceRaw.trim();
@@ -47,18 +46,24 @@ export function parseIntentLocal(utteranceRaw: string): Intent {
   const language = detectLanguage(utterance, lower);
   const entities = extractEntities(utterance);
 
-  // Aadhaar linking (checked first: "link aadhaar" is distinctive).
-  if (AADHAAR_MARKERS.some((m) => lower.includes(m))) {
-    return { intent: "link_aadhaar", entities, language, confidence: 0.95 };
+  let bestId: string | null = null;
+  let bestScore = 0;
+  for (const s of SERVICES) {
+    let score = 0;
+    for (const kw of s.keywords) {
+      if (lower.includes(kw.toLowerCase())) {
+        // Longer, more specific phrases outweigh generic single words.
+        score += kw.includes(" ") ? kw.length + 5 : kw.length;
+      }
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = s.id;
+    }
   }
 
-  if (REFUND_MARKERS.some((m) => lower.includes(m))) {
-    return {
-      intent: "check_refund_status",
-      entities,
-      language,
-      confidence: 0.95,
-    };
+  if (bestId) {
+    return { intent: bestId, entities, language, confidence: 0.95 };
   }
 
   return { intent: "unknown", entities, language, confidence: 0.3 };

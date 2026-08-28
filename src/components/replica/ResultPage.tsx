@@ -43,7 +43,7 @@ export function ResultPage() {
         <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-6 py-4">
           <span className="text-2xl">{style.icon}</span>
           <div>
-            <h1 className="text-lg font-bold text-[#0b3d67]">
+            <h1 className="text-lg font-bold text-indigo-900">
               {result.headline}
             </h1>
             <span
@@ -74,7 +74,7 @@ export function ResultPage() {
           <div className="flex gap-3 pt-1">
             <button
               onClick={() => replicaStore.navigate("services")}
-              className="rounded bg-[#0b5cab] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0a4f92]"
+              className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
             >
               Back to Services
             </button>

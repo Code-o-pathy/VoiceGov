@@ -75,6 +75,7 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
 
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const enabledRef = useRef(false);
+  const listeningRef = useRef(false);
   const langRef = useRef(lang);
   const onFinalRef = useRef(onFinal);
   const onInterimRef = useRef(onInterim);
@@ -103,6 +104,10 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
     onInterimRef.current = onInterim;
     langRef.current = lang;
   }, [onFinal, onInterim, lang]);
+
+  useEffect(() => {
+    listeningRef.current = listening;
+  }, [listening]);
 
   useEffect(() => {
     setSupported(Boolean(getCtor()));
@@ -220,6 +225,30 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
     };
     return rec;
   }, []);
+
+  // Watchdog: if we're supposed to be listening (Web Speech mode) but the
+  // recognition has silently died, rebuild and restart it. Keeps the mic
+  // "always on" without the user having to tap again.
+  useEffect(() => {
+    const iv = setInterval(() => {
+      if (
+        enabledRef.current &&
+        modeRef.current === "webspeech" &&
+        !listeningRef.current
+      ) {
+        const rec = buildRecognition();
+        if (rec) {
+          recRef.current = rec;
+          try {
+            rec.start();
+          } catch {
+            /* will retry on next tick */
+          }
+        }
+      }
+    }, 3500);
+    return () => clearInterval(iv);
+  }, [buildRecognition]);
 
   const startMetering = useCallback((stream: MediaStream) => {
     try {

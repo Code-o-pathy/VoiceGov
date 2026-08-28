@@ -12,6 +12,7 @@ import { sessionStore } from "@/lib/session/store";
 import { parseIntentLocal, extractEntities } from "@/lib/intent/mockIntent";
 import { planLocal } from "@/lib/planner/mockPlanner";
 import { interpretLocal } from "@/lib/interpreter/mockInterpret";
+import { parsePan, parseAadhaar } from "@/lib/interpreter/fieldParse";
 import { replicaStore } from "@/lib/replica/store";
 import {
   PAN_REGEX,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/replica/mockApi";
 import type { StoreField } from "@/schemas/workflow";
 import type { InterpretInput, InterpretOutput } from "@/schemas/interpret";
+import { FIELD_LABELS } from "@/lib/services/catalog";
 
 export type StepStatus = "active" | "done" | "error";
 export interface TimelineItem {
@@ -32,7 +34,8 @@ export interface TimelineItem {
 }
 
 export type Pending =
-  | { kind: "input"; field: string; prompt: string }
+  | { kind: "input"; field: string; prompt: string; current?: string }
+  | { kind: "verify"; field: string; value: string; prompt: string }
   | { kind: "confirmation"; summary: string };
 
 export interface VoiceGovState {
@@ -74,6 +77,9 @@ export function useVoiceGov() {
   // Accumulates spoken fragments while answering a PAN/Aadhaar prompt so we
   // don't act on a partial value like "ABCDE".
   const answerBufferRef = useRef("");
+  // Fields whose stored value the user has already confirmed (or just gave)
+  // this run, so we don't re-ask every field before using it.
+  const verifiedRef = useRef<Set<string>>(new Set());
   const pendingRef = useRef<Pending | null>(null);
   useEffect(() => {
     pendingRef.current = pending;
@@ -83,6 +89,12 @@ export function useVoiceGov() {
   const cancelRef = useRef<() => void>(() => {});
   const confirmRef2 = useRef<() => void>(() => {});
   const handleUtteranceRef = useRef<(t: string) => void>(() => {});
+
+  // Set the status line AND read it aloud, so prompts/questions are spoken.
+  const announce = useCallback((text: string) => {
+    setStatus(text);
+    speak(text, setSpeaking);
+  }, []);
 
   // --- timeline helpers ---------------------------------------------------
   const addStep = useCallback((label: string, detail?: string) => {
@@ -171,11 +183,7 @@ export function useVoiceGov() {
         required_inputs: wf.required_inputs,
         elements,
       },
-      session_known: {
-        pan: Boolean(session.user.pan),
-        aadhaar: Boolean(session.user.aadhaar),
-        assessment_year: true,
-      },
+      session_known: buildSessionKnown(wf, session.user),
     };
   };
 
@@ -245,6 +253,19 @@ export function useVoiceGov() {
     []
   );
 
+  // Detect when an utterance is really a NEW service request for a DIFFERENT
+  // workflow, so the user can change their mind mid-flow (e.g. asked for a PAN
+  // but now says "link my Aadhaar"). Same-workflow phrases are left to the
+  // field handlers so a spoken value isn't mistaken for a switch.
+  const isWorkflowSwitch = useCallback((text: string): boolean => {
+    const parsed = parseIntentLocal(text);
+    if (parsed.intent === "unknown" || parsed.confidence < 0.7) return false;
+    const wf = getWorkflowForIntent(parsed.intent);
+    if (!wf) return false;
+    const cur = workflowRef.current;
+    return !cur || wf.workflow_id !== cur.workflow_id;
+  }, []);
+
   // --- the observe -> plan -> validate -> execute loop --------------------
   const drive = useCallback(async () => {
     const wf = workflowRef.current;
@@ -258,6 +279,34 @@ export function useVoiceGov() {
 
         if (obs.state === "result" && obs.has_result) {
           await complete();
+          return;
+        }
+
+        // Verify any stored value with the user before using it, e.g.
+        // "I have your PAN as ABCDE1234F — use it, or a different one?".
+        const user = sessionStore.get().user as unknown as Record<
+          string,
+          string | null
+        >;
+        const toVerify = Object.values(wf.elements).find(
+          (el) =>
+            el.type === "input" &&
+            el.state === obs.state &&
+            el.sessionKey &&
+            (el.sessionKey === "pan" || el.sessionKey === "aadhaar") &&
+            user[el.sessionKey] &&
+            !verifiedRef.current.has(el.sessionKey)
+        );
+        if (toVerify?.sessionKey) {
+          const key = toVerify.sessionKey;
+          const val = user[key] as string;
+          answerBufferRef.current = "";
+          const prompt = `I have your ${labelFor(key)} as ${maskFor(
+            key,
+            val
+          )}. Say "yes" to use it, or tell me a different ${labelFor(key)}.`;
+          setPending({ kind: "verify", field: key, value: val, prompt });
+          announce(prompt);
           return;
         }
 
@@ -275,16 +324,13 @@ export function useVoiceGov() {
           const ni = plan.needs_user_input[0];
           answerBufferRef.current = "";
           setPending({ kind: "input", field: ni.field, prompt: ni.prompt });
-          setStatus(ni.prompt);
+          announce(ni.prompt);
           return; // resumes when the user provides input
         }
         if (plan.needs_confirmation && !confirmRef.current) {
-          setPending({
-            kind: "confirmation",
-            summary:
-              plan.confirmation_summary || "Please confirm this action.",
-          });
-          setStatus("Waiting for your confirmation before submitting.");
+          const summary = buildConfirmSummary(wf, obs.state);
+          setPending({ kind: "confirmation", summary });
+          announce(summary);
           return;
         }
 
@@ -326,13 +372,11 @@ export function useVoiceGov() {
           const eid = addStep("Validation error");
           failStep(eid, msg);
           sessionStore.setField(key, null);
+          verifiedRef.current.delete(key);
           answerBufferRef.current = "";
-          setPending({
-            kind: "input",
-            field: key,
-            prompt: `${msg} Please say or type a valid ${key.toUpperCase()}.`,
-          });
-          setStatus(msg);
+          const prompt = `${msg} Please say or type a valid ${labelFor(key)}.`;
+          setPending({ kind: "input", field: key, prompt });
+          announce(prompt);
           return;
         }
       }
@@ -365,8 +409,24 @@ export function useVoiceGov() {
   // --- public actions -----------------------------------------------------
   const handleUtterance = useCallback(
     async (text: string) => {
-      // Fresh top-level command: restart the replica journey so repeat
-      // requests navigate again from the beginning.
+      // Understand the request FIRST — don't tear down the current page/state
+      // until we know it's a valid new command (otherwise an unrecognised
+      // phrase would jarringly send the user back to the home page).
+      setTranscript(text);
+      const parsed = await getIntent(text);
+      setIntent(parsed);
+      intentRef.current = parsed;
+
+      if (parsed.intent === "unknown" || parsed.confidence < 0.5) {
+        const uid2 = addStep("Understanding request", text);
+        failStep(uid2, "Could not confidently understand the request.");
+        setStatus(
+          'Sorry, I couldn\'t understand. Try "Check my refund status", "Link my PAN with Aadhaar", or say "change my PAN".'
+        );
+        return; // stay exactly where we are
+      }
+
+      // Valid new command: restart the replica journey from the beginning.
       replicaStore.softReset();
       if (typeof window !== "undefined") window.speechSynthesis?.cancel();
       setResult(null);
@@ -374,19 +434,8 @@ export function useVoiceGov() {
       setPending(null);
       confirmRef.current = false;
       answerBufferRef.current = "";
-      setTranscript(text);
+      verifiedRef.current = new Set();
       const sid = addStep("Understanding request", text);
-      const parsed = await getIntent(text);
-      setIntent(parsed);
-      intentRef.current = parsed;
-
-      if (parsed.intent === "unknown" || parsed.confidence < 0.5) {
-        failStep(sid, "Could not confidently understand the request.");
-        setStatus(
-          'Sorry, I couldn\'t understand. Try "Check my refund status" or "Link my PAN with Aadhaar".'
-        );
-        return;
-      }
       doneStep(sid, `Intent: ${parsed.intent} · ${parsed.language}`);
 
       // Merge entities the intent step may have missed (e.g. a PAN spoken in
@@ -406,11 +455,16 @@ export function useVoiceGov() {
 
       // PAN: use an explicit value; else if the user asked for a different one
       // without a clean value, clear the stored one so we prompt for it.
-      if (merged.pan) sessionStore.setPan(merged.pan);
-      else if (wantsNew("pan")) sessionStore.setField("pan", null);
+      // A value spoken now counts as verified (no need to re-confirm it).
+      if (merged.pan) {
+        sessionStore.setPan(merged.pan);
+        verifiedRef.current.add("pan");
+      } else if (wantsNew("pan")) sessionStore.setField("pan", null);
 
-      if (merged.aadhaar) sessionStore.setAadhaar(merged.aadhaar);
-      else if (wantsNew("aadhaar|aadhar|adhaar|adhar"))
+      if (merged.aadhaar) {
+        sessionStore.setAadhaar(merged.aadhaar);
+        verifiedRef.current.add("aadhaar");
+      } else if (wantsNew("aadhaar|aadhar|adhaar|adhar"))
         sessionStore.setField("aadhaar", null);
 
       if (merged.assessment_year)
@@ -435,15 +489,19 @@ export function useVoiceGov() {
   const commitField = useCallback((key: string, value: string) => {
     sessionStore.setField(key, value);
     entitiesRef.current = { ...entitiesRef.current, [key]: value };
-    if (key === "pan" || key === "aadhaar" || key === "assessmentYear") {
-      replicaStore.setField(key as StoreField, value);
-    }
+    replicaStore.setField(key as StoreField, value);
   }, []);
 
   const provideInput = useCallback(
     async (value: string) => {
       const p = pendingRef.current;
       if (!p || p.kind !== "input") return;
+
+      // Changed their mind → a different service. Abandon this prompt.
+      if (isWorkflowSwitch(value)) {
+        handleUtteranceRef.current(value);
+        return;
+      }
 
       const out = await interpret("awaiting_input", value);
 
@@ -458,8 +516,7 @@ export function useVoiceGov() {
           const key = out.field || p.field;
           if (key === p.field) answerBufferRef.current = "";
           sessionStore.setField(key, null);
-          if (key === "pan" || key === "aadhaar" || key === "assessmentYear")
-            replicaStore.setField(key as StoreField, "");
+          replicaStore.setField(key as StoreField, "");
           const id = addStep(`Cleared ${labelFor(key)}`);
           doneStep(id);
           setStatus(`Cleared ${labelFor(key)}. Please provide it again.`);
@@ -482,6 +539,7 @@ export function useVoiceGov() {
           }
 
           commitField(key, val);
+          verifiedRef.current.add(key);
           const id = addStep(`Received ${labelFor(key)}`);
           doneStep(id, maskFor(key, val));
 
@@ -503,50 +561,164 @@ export function useVoiceGov() {
           return;
       }
     },
-    [interpret, commitField, addStep, doneStep, drive]
+    [interpret, commitField, addStep, doneStep, drive, isWorkflowSwitch]
   );
 
   const handleConfirmSpeech = useCallback(
     async (text: string) => {
       const p = pendingRef.current;
       if (!p || p.kind !== "confirmation") return;
+      const lower = text.toLowerCase();
 
-      const out = await interpret("awaiting_confirmation", text);
-      switch (out.action) {
-        case "confirm":
-          confirmRef2.current();
-          return;
-        case "cancel":
-          cancelRef.current();
-          return;
-        case "new_request":
-          handleUtteranceRef.current(text);
-          return;
-        case "provide":
-        case "correct": {
-          const key = out.field;
-          const val = out.value ?? "";
-          if (key && isValidFor(key, val)) {
-            commitField(key, val);
-            setPending(null);
-            confirmRef.current = false;
-            const id = addStep(`Corrected ${labelFor(key)}`);
-            doneStep(id, maskFor(key, val));
-            setStatus(`Updated ${labelFor(key)}. Re-checking…`);
-            drive();
-            return;
-          }
-          setStatus("Sorry, I couldn't apply that correction.");
-          return;
-        }
-        default:
-          setStatus(
-            "Please confirm or cancel — say 'yes' to proceed or 'no' to stop."
-          );
-          return;
+      // Changed their mind → a different service.
+      if (isWorkflowSwitch(text)) {
+        handleUtteranceRef.current(text);
+        return;
       }
+
+      const applyCorrection = (key: string, val: string) => {
+        commitField(key, val);
+        verifiedRef.current.add(key);
+        setPending(null);
+        confirmRef.current = false;
+        const id = addStep(`Corrected ${labelFor(key)}`);
+        doneStep(id, maskFor(key, val));
+        setStatus(`Updated ${labelFor(key)}. Re-checking…`);
+        drive();
+      };
+      const openFieldEdit = (key: string) => {
+        const user = sessionStore.get().user as unknown as Record<
+          string,
+          string | null
+        >;
+        const cur = user[key] || "";
+        confirmRef.current = false;
+        verifiedRef.current.delete(key);
+        answerBufferRef.current = "";
+        const prompt = `Sure — say your ${labelFor(
+          key
+        )}, or edit it in the box below and press Send.`;
+        setPending({ kind: "input", field: key, prompt, current: cur });
+        announce(prompt);
+      };
+
+      // Explicit abort.
+      if (
+        /\b(cancel|abort|stop|ruko|ruk|band|chhod|chod|nevermind|never mind|forget it)\b/i.test(
+          lower
+        )
+      ) {
+        cancelRef.current();
+        return;
+      }
+
+      // A value spoken now -> correct that field directly (handles spelled /
+      // Hinglish input like "A B C D ji 1234 F").
+      const panVal = parsePan(text);
+      if (panVal) return applyCorrection("pan", panVal);
+      const aadVal = parseAadhaar(text);
+      if (aadVal) return applyCorrection("aadhaar", aadVal);
+
+      // "no" / "change" / "wrong" -> open the relevant field for editing.
+      if (
+        /\b(no|nahi|nahin|change|edit|wrong|galat|different|another|update|badal|correct|fix)\b/i.test(
+          lower
+        )
+      ) {
+        const key = /(aadhaar|aadhar|adhaar|adhar|आधार)/.test(lower)
+          ? "aadhaar"
+          : "pan";
+        openFieldEdit(key);
+        return;
+      }
+
+      // Yes / confirm.
+      if (VERIFY_YES.test(lower)) {
+        confirmRef2.current();
+        return;
+      }
+
+      // Anything subtle: let the interpreter decide.
+      const out = await interpret("awaiting_confirmation", text);
+      if (out.action === "confirm") confirmRef2.current();
+      else if (out.action === "cancel") cancelRef.current();
+      else if (
+        (out.action === "provide" || out.action === "correct") &&
+        out.field &&
+        isValidFor(out.field, out.value || "")
+      )
+        applyCorrection(out.field, out.value as string);
+      else if (out.action === "new_request") handleUtteranceRef.current(text);
+      else announce(p.summary);
     },
-    [interpret, commitField, addStep, doneStep, drive]
+    [interpret, commitField, addStep, doneStep, drive, announce, isWorkflowSwitch]
+  );
+
+  // Respond to "I have your PAN as X — use it, or a different one?".
+  const verifyResponse = useCallback(
+    async (text: string) => {
+      const p = pendingRef.current;
+      if (!p || p.kind !== "verify") return;
+      const key = p.field;
+
+      // Changed their mind → a different service.
+      if (isWorkflowSwitch(text)) {
+        handleUtteranceRef.current(text);
+        return;
+      }
+
+      // 1. A new/corrected value spoken now wins (handles spelled input).
+      const extracted =
+        key === "pan"
+          ? parsePan(text)
+          : key === "aadhaar"
+            ? parseAadhaar(text)
+            : null;
+      if (extracted && isValidFor(key, extracted)) {
+        commitField(key, extracted);
+        verifiedRef.current.add(key);
+        setPending(null);
+        const id = addStep(`Updated ${labelFor(key)}`);
+        doneStep(id, maskFor(key, extracted));
+        drive();
+        return;
+      }
+
+      // 2. Yes / use it.
+      if (VERIFY_YES.test(text)) {
+        verifiedRef.current.add(key);
+        setPending(null);
+        const id = addStep(`Using saved ${labelFor(key)}`);
+        doneStep(id, maskFor(key, p.value));
+        drive();
+        return;
+      }
+
+      // 3. No / different -> open an editable input, prefilled with the old
+      // value, so the user can fix a character or dictate a new one. We stay on
+      // the form (no navigation) and don't submit until it's confirmed.
+      if (VERIFY_DIFFERENT.test(text)) {
+        const old = p.value;
+        sessionStore.setField(key, null);
+        replicaStore.setField(key as StoreField, "");
+        verifiedRef.current.delete(key);
+        answerBufferRef.current = "";
+        const id = addStep(`Changing ${labelFor(key)}`);
+        doneStep(id);
+        const prompt = `Okay, let's update your ${labelFor(
+          key
+        )}. Say the correct ${labelFor(
+          key
+        )}, or edit it in the box below and press Send.`;
+        setPending({ kind: "input", field: key, prompt, current: old });
+        announce(prompt);
+        return;
+      }
+
+      // 4. Couldn't tell — repeat the question.
+      announce(p.prompt);
+    },
+    [commitField, addStep, doneStep, drive, announce, isWorkflowSwitch]
   );
 
   const confirm = useCallback(() => {
@@ -575,10 +747,11 @@ export function useVoiceGov() {
     (text: string) => {
       const p = pendingRef.current;
       if (p?.kind === "input") provideInput(text);
+      else if (p?.kind === "verify") verifyResponse(text);
       else if (p?.kind === "confirmation") handleConfirmSpeech(text);
       else handleUtterance(text);
     },
-    [provideInput, handleConfirmSpeech, handleUtterance]
+    [provideInput, verifyResponse, handleConfirmSpeech, handleUtterance]
   );
 
   const reset = useCallback(() => {
@@ -587,6 +760,8 @@ export function useVoiceGov() {
     confirmRef.current = false;
     intentRef.current = null;
     entitiesRef.current = {};
+    verifiedRef.current = new Set();
+    answerBufferRef.current = "";
     setTimeline([]);
     setIntent(null);
     setTranscript("");
@@ -615,17 +790,47 @@ export function useVoiceGov() {
 
 // --- field helpers --------------------------------------------------------
 function labelFor(key: string): string {
-  switch (key) {
-    case "pan":
-      return "PAN";
-    case "aadhaar":
-      return "Aadhaar";
-    case "assessmentYear":
-    case "assessment_year":
-      return "Assessment Year";
-    default:
-      return key;
+  return FIELD_LABELS[key] ?? key;
+}
+
+/** Which of a workflow's required inputs are already known in the session. */
+function buildSessionKnown(
+  wf: Workflow,
+  user: Record<string, string | null>
+): Record<string, boolean> {
+  const known: Record<string, boolean> = {};
+  for (const el of Object.values(wf.elements)) {
+    if (el.type === "input" && el.sessionKey)
+      known[el.sessionKey] = Boolean(user[el.sessionKey]);
+    if (el.type === "select" && el.sessionKey) known[el.sessionKey] = true;
   }
+  return known;
+}
+
+const VERIFY_YES =
+  /\b(yes|yeah|yep|yup|haan|haa|ha|ok|okay|use it|use this|sahi|theek|thik|correct|right|proceed|go ahead|continue|same|keep)\b/i;
+const VERIFY_DIFFERENT =
+  /\b(no|nope|nahi|nahin|different|another|change|update|naya|naye|nayi|dusra|doosra|galat|wrong|badal)\b/i;
+
+function buildConfirmSummary(wf: Workflow, state: string): string {
+  const user = sessionStore.get().user as unknown as Record<
+    string,
+    string | null
+  >;
+  const repValues = replicaStore.get().values;
+  const parts: string[] = [];
+  for (const el of Object.values(wf.elements)) {
+    if (el.state !== state) continue;
+    if (el.type === "input" && el.sessionKey) {
+      const v = user[el.sessionKey] ?? repValues[el.sessionKey];
+      if (v) parts.push(`${el.label} ${maskFor(el.sessionKey, v)}`);
+    } else if (el.type === "select" && el.field) {
+      const v = repValues[el.field];
+      if (v) parts.push(`${el.label} ${v}`);
+    }
+  }
+  const detail = parts.length ? parts.join(", ") : "the entered details";
+  return `Please confirm — ${detail}. Say "yes" to submit, or "no" to change something.`;
 }
 
 function isValidFor(key: string, value: string): boolean {

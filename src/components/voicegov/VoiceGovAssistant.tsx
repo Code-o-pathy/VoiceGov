@@ -31,6 +31,15 @@ export function VoiceGovAssistant() {
     stateRef.current = state;
   }, [state]);
 
+  // Prefill the input box with the value being collected/verified so the user
+  // can fix a single mis-heard character and press Send instead of redoing it.
+  useEffect(() => {
+    const p = state.pending;
+    if (p?.kind === "verify") setTyped(p.value ?? "");
+    else if (p?.kind === "input") setTyped(p.current ?? "");
+    else if (!p) setTyped("");
+  }, [state.pending]);
+
   const onFinal = useCallback(
     (text: string) => {
       const s = stateRef.current;
@@ -236,7 +245,9 @@ export function VoiceGovAssistant() {
                   placeholder={
                     state.pending?.kind === "input"
                       ? "Type your answer…"
-                      : "Type a request…"
+                      : state.pending?.kind === "verify"
+                        ? "Say yes, or type a different value…"
+                        : "Type a request…"
                   }
                   className="flex-1 rounded-md border border-slate-600 bg-slate-950 px-3 py-1.5 text-sm outline-none placeholder:text-slate-500 focus:border-indigo-400"
                 />
@@ -278,6 +289,19 @@ export function VoiceGovAssistant() {
           onCancel={cancel}
         />
       )}
+
+      {state.pending?.kind === "verify" && (
+        <ConfirmationDialog
+          summary={state.pending.prompt}
+          title="Use saved value?"
+          icon="🔎"
+          confirmLabel="Use this"
+          cancelLabel="Use another"
+          note="Say “yes” to use it, or say a different value."
+          onConfirm={() => submitVoice("yes")}
+          onCancel={() => submitVoice("different")}
+        />
+      )}
     </>
   );
 }
@@ -286,7 +310,8 @@ function getMode(
   state: ReturnType<typeof useVoiceGov>["state"],
   listening: boolean
 ): OrbMode {
-  if (state.pending?.kind === "confirmation") return "confirm";
+  if (state.pending?.kind === "confirmation" || state.pending?.kind === "verify")
+    return "confirm";
   if (state.running) return "thinking";
   if (state.speaking) return "speaking";
   if (listening) return "listening";
@@ -299,6 +324,7 @@ function getCaption(
   permission: string
 ): string {
   if (state.pending?.kind === "confirmation") return "Confirm to continue";
+  if (state.pending?.kind === "verify") return "Use saved value?";
   if (state.running) return "Working…";
   if (state.speaking) return "Speaking…";
   if (state.pending?.kind === "input")

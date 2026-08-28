@@ -2,35 +2,36 @@
 
 import { useSyncExternalStore } from "react";
 import type { ReplicaState, StoreField } from "@/schemas/workflow";
-import {
-  checkRefundStatus,
-  checkAadhaarLink,
-  FieldError,
-  type ServiceResult,
-} from "./mockApi";
+import { FieldError, serviceDelay, type ServiceResult } from "./mockApi";
+import { serviceByFormState, SERVICES } from "@/lib/services/catalog";
 
 export interface ReplicaStore {
   route: ReplicaState;
-  pan: string;
-  assessmentYear: string;
-  aadhaar: string;
+  /** Generic form values keyed by field key (pan, aadhaar, mobile, …). */
+  values: Record<string, string>;
   loading: boolean;
-  /** Inline validation errors keyed by store field ("pan" | "aadhaar" | ...). */
+  /** Inline validation errors keyed by store field. */
   fieldErrors: Record<string, string>;
   result: ServiceResult | null;
 }
 
+/** Field defaults across all services (e.g. assessmentYear). */
+function defaultValues(): Record<string, string> {
+  const v: Record<string, string> = {};
+  for (const s of SERVICES)
+    for (const f of s.fields) if (f.default) v[f.key] = f.default;
+  return v;
+}
+
 const INITIAL: ReplicaStore = {
   route: "home",
-  pan: "",
-  assessmentYear: "2025-26",
-  aadhaar: "",
+  values: defaultValues(),
   loading: false,
   fieldErrors: {},
   result: null,
 };
 
-let state: ReplicaStore = { ...INITIAL };
+let state: ReplicaStore = { ...INITIAL, values: { ...INITIAL.values } };
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<ReplicaStore>) {
@@ -50,47 +51,42 @@ export const replicaStore = {
   setField(field: StoreField, value: string) {
     const fieldErrors = { ...state.fieldErrors };
     delete fieldErrors[field];
-    set({ [field]: value, fieldErrors } as Partial<ReplicaStore>);
+    set({ values: { ...state.values, [field]: value }, fieldErrors });
   },
-  setPan(pan: string) {
-    this.setField("pan", pan);
-  },
-  setAssessmentYear(assessmentYear: string) {
-    this.setField("assessmentYear", assessmentYear);
-  },
-  setAadhaar(aadhaar: string) {
-    this.setField("aadhaar", aadhaar);
+  value(field: string): string {
+    return state.values[field] ?? "";
   },
   async submit() {
+    const def = serviceByFormState(state.route);
+    if (!def) return;
     set({ loading: true, fieldErrors: {} });
     try {
-      let result: ServiceResult;
-      if (state.route === "refund_form") {
-        result = await checkRefundStatus(state.pan, state.assessmentYear);
-      } else if (state.route === "aadhaar_form") {
-        result = await checkAadhaarLink(state.pan, state.aadhaar);
-      } else {
-        set({ loading: false });
-        return;
+      await serviceDelay();
+      // Validate each field; surface the first error inline.
+      for (const f of def.fields) {
+        const raw = state.values[f.key] ?? "";
+        const err = f.validate?.(raw);
+        if (err) throw new FieldError(f.key, err);
       }
+      const result = def.run(state.values);
       set({ loading: false, result, route: "result" });
     } catch (e) {
-      const field = e instanceof FieldError ? e.field : "pan";
+      const field =
+        e instanceof FieldError ? e.field : def.fields[0]?.key ?? "pan";
       const message =
         e instanceof Error ? e.message : "Something went wrong. Try again.";
       set({ loading: false, fieldErrors: { [field]: message } });
     }
   },
   reset() {
-    state = { ...INITIAL };
+    state = { ...INITIAL, values: defaultValues() };
     listeners.forEach((l) => l());
   },
   /** Reset the journey (route/result/inputs) without touching session. */
   softReset() {
     set({
       route: "home",
-      pan: "",
-      aadhaar: "",
+      values: defaultValues(),
       result: null,
       fieldErrors: {},
       loading: false,

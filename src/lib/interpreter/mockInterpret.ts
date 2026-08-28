@@ -1,11 +1,5 @@
 import type { InterpretInput, InterpretOutput } from "@/schemas/interpret";
-import { extractEntities } from "@/lib/intent/mockIntent";
-import {
-  PAN_REGEX,
-  AADHAAR_REGEX,
-  normalizePan,
-  normalizeAadhaar,
-} from "@/lib/replica/mockApi";
+import { parsePan, parseAadhaar } from "@/lib/interpreter/fieldParse";
 
 const YES = /\b(yes|yeah|yep|yup|ok|okay|okey|confirm|confirmed|proceed|go ahead|sure|haan|haa|ha|sahi|theek|thik|kar do|karo|submit|done)\b/i;
 const NO = /\b(no|nope|nahi|nahin|cancel|stop|ruk|ruko|mat|don'?t|abort|wait)\b/i;
@@ -91,18 +85,9 @@ function hasValueToken(u: string): boolean {
 
 /** Compose and normalise the resulting full value for a field key. */
 function buildValue(key: string, base: string, text: string): string | null {
-  if (key === "pan") {
-    const found = extractEntities(text).pan;
-    if (found) return found;
-    const compact = normalizePan(base + text.replace(/[^a-z0-9]/gi, ""));
-    return PAN_REGEX.test(compact) ? compact : null;
-  }
-  if (key === "aadhaar") {
-    const found = extractEntities(text).aadhaar;
-    if (found) return found;
-    const digits = normalizeAadhaar(base + text);
-    return AADHAAR_REGEX.test(digits) ? digits : null;
-  }
+  const combined = base ? `${base} ${text}` : text;
+  if (key === "pan") return parsePan(combined);
+  if (key === "aadhaar") return parseAadhaar(combined);
   const t = text.trim();
   return t.length > 0 ? t : null;
 }
