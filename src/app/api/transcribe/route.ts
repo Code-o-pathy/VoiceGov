@@ -38,7 +38,12 @@ export async function POST(req: Request) {
       body.lang
     );
     return NextResponse.json({ text });
-  } catch {
-    return NextResponse.json({ error: "transcription failed" }, { status: 500 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "transcription failed";
+    console.error("[transcribe] Gemini error:", message);
+    return NextResponse.json(
+      { error: `transcription failed: ${message}` },
+      { status: 500 }
+    );
   }
 }

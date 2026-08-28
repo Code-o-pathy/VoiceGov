@@ -97,11 +97,14 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
   const stopMeteringRef = useRef<(() => void) | null>(null);
 
   // Gemini STT fallback (for browsers where Web Speech can't reach Google,
-  // e.g. Brave). Uses MediaRecorder + /api/transcribe with simple VAD.
+  // e.g. Brave). Captures raw PCM via the Web Audio API and encodes WAV (which
+  // Gemini accepts — unlike MediaRecorder's WebM/Opus) with simple VAD.
   const modeRef = useRef<"webspeech" | "gemini">("webspeech");
   const geminiAvailableRef = useRef(false);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const pcmRef = useRef<Float32Array[]>([]);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const sinkRef = useRef<GainNode | null>(null);
+  const sampleRateRef = useRef(48000);
   const hadSpeechRef = useRef(false);
   const lastVoiceRef = useRef(0);
   const segStartRef = useRef(0);
@@ -309,13 +312,7 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
   }, []);
   stopMeteringRef.current = stopMetering;
 
-  // --- Gemini recorder-mode fallback --------------------------------------
-  const pickMimeType = useCallback((): string | undefined => {
-    if (typeof MediaRecorder === "undefined") return undefined;
-    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
-    return candidates.find((t) => MediaRecorder.isTypeSupported(t));
-  }, []);
-
+  // --- Gemini fallback: WAV capture ---------------------------------------
   const sendForTranscription = useCallback(async (blob: Blob) => {
     try {
       const b64: string = await new Promise((resolve, reject) => {
@@ -361,43 +358,49 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
     }
   }, []);
 
-  const startRecorderSegment = useCallback(() => {
-    const stream = streamRef.current;
-    if (!stream || typeof MediaRecorder === "undefined") return;
-    let mr: MediaRecorder;
-    const mime = pickMimeType();
-    try {
-      mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-    } catch {
-      return;
-    }
-    recorderRef.current = mr;
-    chunksRef.current = [];
+  // Flush the buffered PCM for the current utterance as a WAV clip.
+  const flushSegment = useCallback(() => {
+    const hadSpeech = hadSpeechRef.current;
+    const chunks = pcmRef.current;
+    pcmRef.current = [];
     hadSpeechRef.current = false;
     segStartRef.current = performance.now();
     lastVoiceRef.current = performance.now();
-    mr.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
-    };
-    mr.onstop = () => {
-      const chunks = chunksRef.current;
-      if (hadSpeechRef.current && chunks.length > 0) {
-        void sendForTranscription(
-          new Blob(chunks, { type: mr.mimeType || mime || "audio/webm" })
-        );
-      }
-      // Immediately start the next segment so listening stays continuous.
-      if (enabledRef.current && modeRef.current === "gemini") {
-        startRecorderSegment();
-      }
-    };
+    // Only transcribe segments that actually contained speech.
+    if (!hadSpeech || chunks.length === 0) return;
+    const wav = encodeWav(chunks, sampleRateRef.current);
+    void sendForTranscription(wav);
+  }, [sendForTranscription]);
+
+  const startWavCapture = useCallback(() => {
+    const stream = streamRef.current;
+    const ctx = audioCtxRef.current;
+    if (!stream || !ctx) return;
+    ctx.resume?.().catch(() => {});
+    sampleRateRef.current = ctx.sampleRate;
     try {
-      mr.start();
-      setListening(true);
+      const source = ctx.createMediaStreamSource(stream);
+      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      const sink = ctx.createGain();
+      sink.gain.value = 0; // silent — we only need onaudioprocess to fire
+      processor.onaudioprocess = (e) => {
+        if (modeRef.current !== "gemini") return;
+        const input = e.inputBuffer.getChannelData(0);
+        pcmRef.current.push(new Float32Array(input));
+      };
+      source.connect(processor);
+      processor.connect(sink);
+      sink.connect(ctx.destination);
+      processorRef.current = processor;
+      sinkRef.current = sink;
+      pcmRef.current = [];
+      hadSpeechRef.current = false;
+      segStartRef.current = performance.now();
+      lastVoiceRef.current = performance.now();
     } catch {
-      /* ignore */
+      /* capture unavailable */
     }
-  }, [pickMimeType, sendForTranscription]);
+  }, []);
 
   // Voice-activity detection: end a segment on a pause after speech.
   vadRef.current = (lvl: number) => {
@@ -407,16 +410,11 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
       hadSpeechRef.current = true;
       lastVoiceRef.current = now;
     }
-    const mr = recorderRef.current;
-    if (!mr || mr.state !== "recording") return;
+    if (!processorRef.current) return;
     const dur = now - segStartRef.current;
     const silence = now - lastVoiceRef.current;
     if ((hadSpeechRef.current && silence > 900 && dur > 700) || dur > 12000) {
-      try {
-        mr.stop();
-      } catch {
-        /* ignore */
-      }
+      flushSegment();
     }
   };
 
@@ -425,8 +423,8 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
     enabledRef.current = true;
     setError(null);
     setListening(true);
-    startRecorderSegment();
-  }, [startRecorderSegment]);
+    startWavCapture();
+  }, [startWavCapture]);
   startGeminiModeRef.current = startGeminiMode;
 
   const start = useCallback(async () => {
@@ -495,6 +493,22 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
     if (m) setInterim("");
   }, []);
 
+  const teardownWavCapture = useCallback(() => {
+    try {
+      processorRef.current?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      sinkRef.current?.disconnect();
+    } catch {
+      /* ignore */
+    }
+    processorRef.current = null;
+    sinkRef.current = null;
+    pcmRef.current = [];
+  }, []);
+
   const stop = useCallback(() => {
     enabledRef.current = false;
     setListening(false);
@@ -504,27 +518,18 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
     } catch {
       /* ignore */
     }
-    try {
-      if (recorderRef.current?.state === "recording") recorderRef.current.stop();
-    } catch {
-      /* ignore */
-    }
+    teardownWavCapture();
     stopMetering();
-  }, [stopMetering]);
+  }, [stopMetering, teardownWavCapture]);
 
   useEffect(
     () => () => {
       enabledRef.current = false;
       recRef.current?.abort();
-      try {
-        if (recorderRef.current?.state === "recording")
-          recorderRef.current.stop();
-      } catch {
-        /* ignore */
-      }
+      teardownWavCapture();
       stopMetering();
     },
-    [stopMetering]
+    [stopMetering, teardownWavCapture]
   );
 
   return {
@@ -538,4 +543,49 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
     stop,
     setMuted,
   };
+}
+
+/**
+ * Encode captured PCM (Float32 chunks at the given sample rate) into a 16-bit
+ * mono WAV Blob. Gemini's audio understanding accepts WAV, unlike the WebM/Opus
+ * that MediaRecorder produces in Chromium browsers such as Brave.
+ */
+function encodeWav(chunks: Float32Array[], sampleRate: number): Blob {
+  let length = 0;
+  for (const c of chunks) length += c.length;
+  const pcm = new Float32Array(length);
+  let offset = 0;
+  for (const c of chunks) {
+    pcm.set(c, offset);
+    offset += c.length;
+  }
+
+  const buffer = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(buffer);
+  const writeStr = (pos: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(pos + i, s.charCodeAt(i));
+  };
+
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true); // PCM chunk size
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeStr(36, "data");
+  view.setUint32(40, pcm.length * 2, true);
+
+  let pos = 44;
+  for (let i = 0; i < pcm.length; i++) {
+    const s = Math.max(-1, Math.min(1, pcm[i]));
+    view.setInt16(pos, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    pos += 2;
+  }
+
+  return new Blob([view], { type: "audio/wav" });
 }
