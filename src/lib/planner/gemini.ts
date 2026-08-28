@@ -62,17 +62,18 @@ export async function geminiJSON(
   const ai = getClient();
   if (!ai) throw new Error("Gemini not configured");
 
-  const res = await withRetry(() =>
-    ai.models.generateContent({
-      model: MODEL,
-      contents: prompt,
-      config: {
-        systemInstruction: system,
-        responseMimeType: "application/json",
-        temperature: 0,
-      },
-    })
-  );
+  // NOTE: no retry here on purpose. Callers (intent/plan/interpret) all have a
+  // deterministic mock fallback, so on a rate-limit we fail fast to that instead
+  // of stalling the observe→plan loop with backoff delays.
+  const res = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      systemInstruction: system,
+      responseMimeType: "application/json",
+      temperature: 0,
+    },
+  });
 
   const text = res.text;
   if (!text) throw new Error("Empty Gemini response");
