@@ -55,6 +55,12 @@ export interface UseSpeech {
   start: () => Promise<void>;
   /** Turn the mic off completely. */
   stop: () => void;
+  /**
+   * Temporarily ignore recognised speech WITHOUT tearing down the mic. Used to
+   * suppress the assistant's own text-to-speech from being captured as input
+   * (echo) while it is talking, so answers spoken afterwards still register.
+   */
+  setMuted: (muted: boolean) => void;
 }
 
 /**
@@ -76,6 +82,9 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const enabledRef = useRef(false);
   const listeningRef = useRef(false);
+  // When true, recognised speech is ignored (e.g. while TTS is speaking) so the
+  // assistant doesn't hear its own voice.
+  const mutedRef = useRef(false);
   const langRef = useRef(lang);
   const onFinalRef = useRef(onFinal);
   const onInterimRef = useRef(onInterim);
@@ -153,6 +162,11 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
     };
     rec.onresult = (e) => {
       networkFailsRef.current = 0; // a successful result clears network errors
+      if (mutedRef.current) {
+        // Ignore anything captured while the assistant is speaking (echo).
+        setInterim("");
+        return;
+      }
       let interimText = "";
       let finalText = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -325,7 +339,8 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
       if (!res.ok) return;
       const data = (await res.json()) as { text?: string };
       const text = (data.text || "").trim();
-      if (text) {
+      // Drop transcripts captured while muted (assistant was speaking).
+      if (text && !mutedRef.current) {
         setInterim("");
         onFinalRef.current(text);
       }
@@ -427,9 +442,27 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
     enabledRef.current = true;
     networkFailsRef.current = 0;
 
+    // Brave ships webkitSpeechRecognition but blocks Google's speech backend,
+    // so Web Speech always fails with "network". Detect Brave and go straight
+    // to the Gemini recorder fallback (when a key is available).
+    let isBrave = false;
+    try {
+      const b = (navigator as unknown as {
+        brave?: { isBrave?: () => Promise<boolean> };
+      }).brave;
+      if (b?.isBrave) isBrave = await b.isBrave();
+    } catch {
+      /* ignore */
+    }
+
+    const preferGemini =
+      geminiAvailableRef.current && (!hasWebSpeech || isBrave);
+
     // Prefer Web Speech (instant, free). Fall back to Gemini recorder mode when
-    // Web Speech isn't available (e.g. Brave with no Google speech backend).
-    if (hasWebSpeech) {
+    // Web Speech isn't available/reliable (e.g. Brave).
+    if (preferGemini) {
+      startGeminiMode();
+    } else if (hasWebSpeech) {
       modeRef.current = "webspeech";
       const rec = buildRecognition();
       if (!rec) return;
@@ -444,6 +477,11 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
       startGeminiMode();
     }
   }, [buildRecognition, startGeminiMode]);
+
+  const setMuted = useCallback((m: boolean) => {
+    mutedRef.current = m;
+    if (m) setInterim("");
+  }, []);
 
   const stop = useCallback(() => {
     enabledRef.current = false;
@@ -486,5 +524,6 @@ export function useSpeech({ lang, onFinal, onInterim }: UseSpeechOptions): UseSp
     level,
     start,
     stop,
+    setMuted,
   };
 }

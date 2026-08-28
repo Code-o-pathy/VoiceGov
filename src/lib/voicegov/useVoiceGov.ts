@@ -17,8 +17,6 @@ import { replicaStore } from "@/lib/replica/store";
 import {
   PAN_REGEX,
   AADHAAR_REGEX,
-  maskPan,
-  maskAadhaar,
   type ServiceResult,
 } from "@/lib/replica/mockApi";
 import type { StoreField } from "@/schemas/workflow";
@@ -71,6 +69,8 @@ export function useVoiceGov() {
   const workflowRef = useRef<Workflow | null>(null);
   const executorRef = useRef<Executor | null>(null);
   const intentRef = useRef<Intent | null>(null);
+  // BCP-47 language for spoken replies, derived from the user's input language.
+  const replyLangRef = useRef("en-IN");
   const entitiesRef = useRef<Record<string, string>>({});
   const confirmRef = useRef(false);
   const drivingRef = useRef(false);
@@ -93,7 +93,7 @@ export function useVoiceGov() {
   // Set the status line AND read it aloud, so prompts/questions are spoken.
   const announce = useCallback((text: string) => {
     setStatus(text);
-    speak(text, setSpeaking);
+    speak(text, setSpeaking, replyLangRef.current);
   }, []);
 
   // --- timeline helpers ---------------------------------------------------
@@ -399,7 +399,7 @@ export function useVoiceGov() {
       } else {
         setStatus(`Done — ${r.headline}.`);
       }
-      speak(`${r.headline}. ${r.detail}`, setSpeaking);
+      speak(`${r.headline}. ${r.detail}`, setSpeaking, replyLangRef.current);
     } else {
       doneStep(id);
       setStatus("Workflow complete.");
@@ -416,6 +416,9 @@ export function useVoiceGov() {
       const parsed = await getIntent(text);
       setIntent(parsed);
       intentRef.current = parsed;
+      // Reply in the language the user spoke: Hindi/Hinglish -> hi-IN voice.
+      replyLangRef.current =
+        parsed.language === "english" ? "en-IN" : "hi-IN";
 
       if (parsed.intent === "unknown" || parsed.confidence < 0.5) {
         const uid2 = addStep("Understanding request", text);
@@ -840,9 +843,10 @@ function isValidFor(key: string, value: string): boolean {
   return value.trim().length > 0;
 }
 
-function maskFor(key: string, value: string): string {
-  if (key === "pan") return maskPan(value);
-  if (key === "aadhaar") return maskAadhaar(value);
+// Show the actual value in spoken/on-screen prompts (this is synthetic demo
+// data). Previously PAN/Aadhaar were masked which sounded/looked "censored"
+// when read back for confirmation.
+function maskFor(_key: string, value: string): string {
   return value;
 }
 
@@ -880,18 +884,27 @@ function execDetail(action: Action, wf: Workflow): string | undefined {
     >;
     const key = el?.sessionKey;
     const raw = key ? user[key] : undefined;
-    if (raw && el?.field === "pan") return maskPan(raw);
-    if (raw && el?.field === "aadhaar") return maskAadhaar(raw);
-    return el?.label;
+    return raw || el?.label;
   }
   return wf.elements[action.element_id || ""]?.label;
 }
 
-function speak(text: string, setSpeaking?: (v: boolean) => void) {
+function speak(
+  text: string,
+  setSpeaking?: (v: boolean) => void,
+  lang = "en-IN"
+) {
   if (typeof window === "undefined" || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = "en-IN";
+  u.lang = lang;
+  // Pick a voice matching the language when one is installed.
+  const voices = window.speechSynthesis.getVoices();
+  const base = lang.split("-")[0];
+  const voice =
+    voices.find((v) => v.lang === lang) ||
+    voices.find((v) => v.lang.startsWith(base));
+  if (voice) u.voice = voice;
   u.rate = 1;
   u.onstart = () => setSpeaking?.(true);
   u.onend = () => setSpeaking?.(false);

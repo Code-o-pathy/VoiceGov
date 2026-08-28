@@ -21,9 +21,12 @@ const LANGS = [
 
 export function VoiceGovAssistant() {
   const { state, submitVoice, confirm, cancel, reset } = useVoiceGov();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [lang, setLang] = useState("en-IN");
   const [typed, setTyped] = useState("");
+  // When the user manually minimises the panel, don't auto-reopen it until they
+  // tap the orb again.
+  const manualCollapseRef = useRef(false);
 
   // Keep the latest engine state in a ref for the speech callback.
   const stateRef = useRef(state);
@@ -44,10 +47,11 @@ export function VoiceGovAssistant() {
     (text: string) => {
       const s = stateRef.current;
       if (text.trim().length < 2) return;
-      // Ignore audio captured while VoiceGov is busy or talking. Confirmation
-      // speech ("yes", "no", or "actually my PAN is …") IS handled — it's
-      // routed through the interpreter by submitVoice.
-      if (s.running || s.speaking) return;
+      // Don't act on audio captured mid-execution. We no longer block while
+      // "speaking" — the mic is muted during TTS (see setMuted below), so any
+      // answer that reaches here was spoken AFTER the prompt finished, e.g.
+      // "yes"/"no" for confirmations.
+      if (s.running) return;
       submitVoice(text);
     },
     [submitVoice]
@@ -55,8 +59,16 @@ export function VoiceGovAssistant() {
 
   const speech = useSpeech({ lang, onFinal });
 
-  // Auto-open the panel whenever there is something to show.
+  // Mute the recognizer while the assistant is speaking so its own TTS voice
+  // isn't captured as input (which was eating "yes"/"no" confirmations).
   useEffect(() => {
+    speech.setMuted(state.speaking);
+  }, [state.speaking, speech]);
+
+  // Auto-open the panel whenever there is something to show — unless the user
+  // just minimised it on purpose.
+  useEffect(() => {
+    if (manualCollapseRef.current) return;
     if (
       state.transcript ||
       state.timeline.length > 0 ||
@@ -78,9 +90,15 @@ export function VoiceGovAssistant() {
   }, [lang]);
 
   const toggleMic = () => {
+    manualCollapseRef.current = false;
     setExpanded(true);
     if (speech.listening) speech.stop();
     else speech.start();
+  };
+
+  const minimize = () => {
+    manualCollapseRef.current = true;
+    setExpanded(false);
   };
 
   const submitTyped = () => {
@@ -130,11 +148,13 @@ export function VoiceGovAssistant() {
                   ))}
                 </div>
                 <button
-                  onClick={() => setExpanded(false)}
-                  className="rounded p-1 text-slate-400 hover:bg-slate-700 hover:text-white"
-                  aria-label="Collapse"
+                  onClick={minimize}
+                  className="flex items-center gap-1 rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1.5 text-[11px] font-medium text-slate-200 hover:border-slate-400 hover:bg-slate-700 hover:text-white"
+                  aria-label="Minimize assistant"
+                  title="Minimize (tuck back into the corner)"
                 >
-                  ▾
+                  <span className="text-sm leading-none">▾</span>
+                  Minimize
                 </button>
               </div>
             </div>
