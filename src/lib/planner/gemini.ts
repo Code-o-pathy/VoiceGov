@@ -17,7 +17,11 @@ export function isGeminiEnabled(): boolean {
   return Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
 }
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+// A cheaper/faster model used for high-frequency calls (STT + field interpret)
+// to conserve the primary model's rate-limit quota. Falls back to MODEL.
+const LITE_MODEL =
+  process.env.GEMINI_LITE_MODEL || process.env.GEMINI_MODEL || "gemini-3.6-flash-lite";
 
 /**
  * Ask Gemini for a strict-JSON response. Returns parsed JSON or throws.
@@ -58,7 +62,7 @@ export async function geminiTranscribe(
   if (!ai) throw new Error("Gemini not configured");
 
   const res = await ai.models.generateContent({
-    model: MODEL,
+    model: LITE_MODEL,
     contents: [
       {
         role: "user",
